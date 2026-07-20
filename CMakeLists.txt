@@ -39,7 +39,9 @@ add_executable(${CMAKE_PROJECT_NAME}
         Core/BSP/GIMBAL/gimbal.c
         Core/BSP/GIMBAL/gimbal.h
         Core/BSP/K230/k230_parser.c
-        Core/BSP/K230/k230_parser.h)
+        Core/BSP/K230/k230_parser.h
+        Core/BSP/MONITOR/perf_monitor.c
+        Core/BSP/MONITOR/perf_monitor.h)
 
 # Add STM32CubeMX generated sources
 add_subdirectory(cmake/stm32cubemx)

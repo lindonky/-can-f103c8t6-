@@ -30,6 +30,7 @@
 #include "gimbal.h"
 #include <stdio.h>
 #include "imu.h"
+#include "perf_monitor.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -44,7 +45,8 @@
 
 /* Private macro -------------------------------------------------------------*/
 /* USER CODE BEGIN PM */
-
+Perf_FPS_t vision_fps = {0};
+Perf_FPS_t gyro_fps = {0};
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
@@ -65,6 +67,10 @@ uint8_t imu_rx_byte;
 uint16_t count1 = 0;
 uint16_t count2 = 0;
 volatile uint16_t count3 = 0;
+
+float pid_cost_time = 0.0f; // 记录 PID 耗时
+extern volatile int16_t gyro_angle_raw;
+extern volatile uint8_t gyro_rx_done;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -113,23 +119,9 @@ int main(void)
   MX_USART2_UART_Init();
   /* USER CODE BEGIN 2 */
   OLED_Init();
-
-  // CAN_FilterTypeDef sFilterConfig;
-  // sFilterConfig.FilterBank = 0;
-  // sFilterConfig.FilterMode = CAN_FILTERMODE_IDMASK;
-  // sFilterConfig.FilterScale = CAN_FILTERSCALE_32BIT;
-  // sFilterConfig.FilterIdHigh = 0x0000;
-  // sFilterConfig.FilterIdLow = 0x0000;
-  // // 掩码全部设为 0，意味着“不检查任何位”，所有设备的报文全部放行！
-  // sFilterConfig.FilterMaskIdHigh = 0x0000;
-  // sFilterConfig.FilterMaskIdLow = 0x0000;
-  // sFilterConfig.FilterFIFOAssignment = CAN_RX_FIFO0;
-  // sFilterConfig.FilterActivation = ENABLE;
-  // sFilterConfig.SlaveStartFilterBank = 14;
+  Perf_Init();
 
   USER_CAN1_Filter_Init();
-
-
 
   if(HAL_CAN_Start(&hcan) != HAL_OK) { Error_Handler(); }
   if(HAL_CAN_ActivateNotification(&hcan, CAN_IT_RX_FIFO0_MSG_PENDING) != HAL_OK) { Error_Handler(); }
@@ -143,8 +135,7 @@ int main(void)
   K230_Parser_Init();
   HAL_UARTEx_ReceiveToIdle_DMA(&huart1, rx_buffer, sizeof(rx_buffer));
   HAL_UART_Receive_IT(&huart2, &imu_rx_byte, 1);
-  // OLED_ShowString(0, 0, "Inited", OLED_8X16);
-  // OLED_Update();
+
   // 初始化云台 PID 参数
   Gimbal_Init();
   Gyro_ConfigReportRateRx();
@@ -158,37 +149,43 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-    if (HAL_GetTick() - last_track_time >= 3)  //33Hz
+    if (gyro_rx_done == 1)
+    {
+      Perf_Start_Measure(); // ⏱️ DWT 掐表开始
+      // 执行内环控速下发
+      Gimbal_InnerLoop_Gyro_200Hz();
+      pid_cost_time = Perf_End_Measure_us(); // ⏱️ DWT 掐表结束，拿到微秒级耗时
+      Perf_FPS_Tick(&gyro_fps); // 📈 陀螺仪频率“打卡”
+      gyro_rx_done = 0; // 清除标志，等待下一帧
+    }
+    Perf_FPS_Calc_1Hz(&vision_fps);
+    if (Perf_FPS_Calc_1Hz(&gyro_fps) == true)
+    {
+      OLED_Clear();
+      // 打印 K230 视觉追踪的真实 Hz
+      OLED_Printf(0, 0, OLED_8X16, "V_Hz:%d", vision_fps.fps_result);
+
+      // 打印陀螺仪控制内环的真实 Hz (看看有没有跑满 500Hz)
+      OLED_Printf(0, 16, OLED_8X16, "G_Hz:%d", gyro_fps.fps_result);
+
+      // 打印一次 PID 闭环算法 + CAN 发送消耗的时间 (us)
+      OLED_Printf(0, 32, OLED_8X16, "Cost:%.1fus", pid_cost_time);
+
+      // 打印你的调试变量
+      OLED_Printf(0, 48, OLED_6X8, "C1:%d C2:%d C3:%d", count1, count2, count3);
+
+      OLED_Update(); // 每秒仅仅耗时 30ms 刷一次屏
+    }
+    if (HAL_GetTick() - last_track_time >= 33)  //33Hz
     {
       last_track_time = HAL_GetTick();
-      //  OLED_Clear();
-      // OLED_Printf(0,0,OLED_6X8,"%d,%d",count++);
-      // // OLED_Printf(0,0,OLED_6X8,"%d,%d",K230_Target.err_x, K230_Target.err_y);
-      // // OLED_Printf(0,12,OLED_6X8,"RX:%lu CH:%d  ",debug_rx_count, debug_frame_count);
-      // // OLED_Printf(0,24,OLED_6X8,"UPD:%d ERR:%lu  ",K230_Target.is_updated, hcan.ErrorCode);
-      // // OLED_Printf(0,36,OLED_6X8,"B:%s", rx_buffer);
-      //  OLED_Update();
-      Gimbal_InnerLoop_Gyro_200Hz();
+
       count1++;
       // 只有当状态机完整拼接出一帧校验通过的数据时，才去控制电机
       if (K230_Target.is_updated == true)
       {
         // 第一时间清除标志位，等待下一帧
         K230_Target.is_updated = false;
-        OLED_Clear();
-        OLED_Printf(0,0,OLED_6X8,"%d,%d",K230_Target.err_x, K230_Target.err_y);
-        // OLED_Printf(0,12,OLED_6X8,"RX:%lu CH:%d  ",debug_rx_count, debug_frame_count);
-        // OLED_Printf(0,24,OLED_6X8,"UPD:%d ERR:%lu  ",K230_Target.is_updated, hcan.ErrorCode);
-        // OLED_Printf(0,36,OLED_6X8,"B:%s", rx_buffer);
-        OLED_Printf(0, 16, OLED_6X8, "%d,%d,%d", count1,count2,count3);
-        OLED_Update();
-         // OLED_Printf(0,0,OLED_6X8,"%d,%d",K230_Target.err_x, K230_Target.err_y);
-        // OLED_Printf(30,0,OLED_6X8,"RX:%lu CH:%c  ",debug_rx_count, debug_last_char);
-        // OLED_Printf(60,0,OLED_6X8,"UPD:%d ERR:%lu  ",K230_Target.is_updated, hcan.ErrorCode);
-         // OLED_Update();
-
-        // 直接读取全局结构体中的像素误差，送入云台 PID 驱动
-
       }
     }
   }
@@ -269,6 +266,7 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size)
       K230_Target.is_updated = true;
 
       Gimbal_OuterLoop_Vision_80Hz(K230_Target.err_x, K230_Target.err_y); //中断内处理yaw轴外环
+      Perf_FPS_Tick(&vision_fps);//视觉帧率监控
       //debug_frame_count++; // 解析成功，屏幕上的 CH +1
     }
 
@@ -307,6 +305,16 @@ void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
 
     HAL_UARTEx_ReceiveToIdle_DMA(&huart1, rx_buffer, sizeof(rx_buffer));
     __HAL_DMA_DISABLE_IT(huart->hdmarx, DMA_IT_HT);
+  }else if (huart->Instance == USART2)
+  {
+    // ================= 陀螺仪串口错误恢复 =================
+    // 发生 ORE 溢出错误时，清除标志位，防止死锁
+    __HAL_UART_CLEAR_OREFLAG(huart);
+    __HAL_UART_CLEAR_NEFLAG(huart);
+    __HAL_UART_CLEAR_FEFLAG(huart);
+
+    // 重新开启陀螺仪的单字节中断接收
+    HAL_UART_Receive_IT(&huart2, &imu_rx_byte, 1);
   }
 }
 
@@ -326,6 +334,7 @@ void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *hcan)
     // Emm_V5_Receive_Data(&RxHeader, RxData);
   }
 }
+
 /* USER CODE END 4 */
 
 /**
