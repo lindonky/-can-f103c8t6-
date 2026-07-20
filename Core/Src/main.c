@@ -29,6 +29,7 @@
 #include "Emm_V5.h"
 #include "gimbal.h"
 #include <stdio.h>
+#include "imu.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -59,7 +60,11 @@ uint32_t debug_frame_count = 0;
 uint32_t count = 0;
 uint32_t debug_can_rx_count = 0;  // 记录 CAN 总共收到了多少帧数据
 uint32_t debug_can_last_id = 0;   // 记录最新收到的一帧数据的 ID
+uint8_t imu_rx_byte;
 
+uint16_t count1 = 0;
+uint16_t count2 = 0;
+volatile uint16_t count3 = 0;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -105,6 +110,7 @@ int main(void)
   MX_DMA_Init();
   MX_CAN_Init();
   MX_USART1_UART_Init();
+  MX_USART2_UART_Init();
   /* USER CODE BEGIN 2 */
   OLED_Init();
 
@@ -136,11 +142,12 @@ int main(void)
 
   K230_Parser_Init();
   HAL_UARTEx_ReceiveToIdle_DMA(&huart1, rx_buffer, sizeof(rx_buffer));
-
+  HAL_UART_Receive_IT(&huart2, &imu_rx_byte, 1);
   // OLED_ShowString(0, 0, "Inited", OLED_8X16);
   // OLED_Update();
   // 初始化云台 PID 参数
   Gimbal_Init();
+  Gyro_ConfigReportRateRx();
   // 上电后等待稳定，使能锁死电机
   HAL_Delay(100);
   //Gimbal_Enable(true);
@@ -151,7 +158,7 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-    if (HAL_GetTick() - last_track_time >= 30)  //33Hz
+    if (HAL_GetTick() - last_track_time >= 3)  //33Hz
     {
       last_track_time = HAL_GetTick();
       //  OLED_Clear();
@@ -161,7 +168,8 @@ int main(void)
       // // OLED_Printf(0,24,OLED_6X8,"UPD:%d ERR:%lu  ",K230_Target.is_updated, hcan.ErrorCode);
       // // OLED_Printf(0,36,OLED_6X8,"B:%s", rx_buffer);
       //  OLED_Update();
-
+      Gimbal_InnerLoop_Gyro_200Hz();
+      count1++;
       // 只有当状态机完整拼接出一帧校验通过的数据时，才去控制电机
       if (K230_Target.is_updated == true)
       {
@@ -172,7 +180,7 @@ int main(void)
         // OLED_Printf(0,12,OLED_6X8,"RX:%lu CH:%d  ",debug_rx_count, debug_frame_count);
         // OLED_Printf(0,24,OLED_6X8,"UPD:%d ERR:%lu  ",K230_Target.is_updated, hcan.ErrorCode);
         // OLED_Printf(0,36,OLED_6X8,"B:%s", rx_buffer);
-        OLED_Printf(0, 48, OLED_6X8, "CRX:%lu,ID:%X", debug_can_rx_count,debug_can_last_id);
+        OLED_Printf(0, 16, OLED_6X8, "%d,%d,%d", count1,count2,count3);
         OLED_Update();
          // OLED_Printf(0,0,OLED_6X8,"%d,%d",K230_Target.err_x, K230_Target.err_y);
         // OLED_Printf(30,0,OLED_6X8,"RX:%lu CH:%c  ",debug_rx_count, debug_last_char);
@@ -180,8 +188,7 @@ int main(void)
          // OLED_Update();
 
         // 直接读取全局结构体中的像素误差，送入云台 PID 驱动
-        Gimbal_Vision_Track(K230_Target.err_x, K230_Target.err_y);
-        Emm_V5_Read_Sys_Params(2,1);
+
       }
     }
   }
@@ -247,8 +254,8 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size)
 {
   if (huart->Instance == USART1)
   {
-    debug_rx_count++; // 只要进中断，屏幕上的 RX 必定 +1
-
+    //debug_rx_count++; // 只要进中断，屏幕上的 RX 必定 +1
+    count2++;
     // 1. 强制补上结束符
     rx_buffer[Size] = '\0';
 
@@ -261,7 +268,8 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size)
       K230_Target.err_y = (int16_t)temp_y;
       K230_Target.is_updated = true;
 
-      debug_frame_count++; // 解析成功，屏幕上的 CH +1
+      Gimbal_OuterLoop_Vision_80Hz(K230_Target.err_x, K230_Target.err_y); //中断内处理yaw轴外环
+      //debug_frame_count++; // 解析成功，屏幕上的 CH +1
     }
 
     // 3. 重启 DMA 接收
@@ -272,8 +280,22 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size)
     HAL_UARTEx_ReceiveToIdle_DMA(&huart1, rx_buffer, sizeof(rx_buffer));
     __HAL_DMA_DISABLE_IT(huart->hdmarx, DMA_IT_HT);        // 关闭过半中断防干扰
   }
+
+
 }
 
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
+{
+  if (huart->Instance == USART2) // 陀螺仪使用串口2
+  {
+    // 将收到的字节喂给你写好的状态机
+    Gyro_ParseFrame(imu_rx_byte);
+    count3++;
+
+    // 重新开启中断接收下一个字节
+    HAL_UART_Receive_IT(&huart2, &imu_rx_byte, 1);
+  }
+}
 void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
 {
   if (huart->Instance == USART1)

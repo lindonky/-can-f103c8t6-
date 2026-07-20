@@ -1,9 +1,9 @@
 #ifndef IMU_h
 #define IMU_h
 
-#include "ti_msp_dl_config.h"
-#include "stdio.h"
-#include "motor_crc.h"
+// #include "ti_msp_dl_config.h"
+ #include "stdio.h"
+// #include "motor_crc.h"
 #include "stdint.h"
 void Gyro_ParseFrame(uint8_t data);
 

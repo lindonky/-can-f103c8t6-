@@ -2,22 +2,22 @@
 #include "main.h"
 uint8_t test_comm[20];
 
-void test(void)
-{
-	test_comm[0]=0xaa;
-	test_comm[1]=0x06;
-	test_comm[2]=0x01;
-	test_comm[3]=0x02;
-	test_comm[4]=0x01;
-	uint16_t aa;
-	aa = CRC16(test_comm, 5);
+// void test(void)
+// {
+// 	test_comm[0]=0xaa;
+// 	test_comm[1]=0x06;
+// 	test_comm[2]=0x01;
+// 	test_comm[3]=0x02;
+// 	test_comm[4]=0x01;
+// 	uint16_t aa;
+// 	aa = CRC16(test_comm, 5);
+//
+// 	 test_comm[5] = aa & 0xFF;        // CRC_L
+//    test_comm[6] = (aa >> 8) & 0xFF; // CRC_H
+//
+// }
 
-	 test_comm[5] = aa & 0xFF;        // CRC_L
-   test_comm[6] = (aa >> 8) & 0xFF; // CRC_H
-
-}
-
-
+extern UART_HandleTypeDef huart2;
 
 volatile int16_t gyro_angle_raw;
 volatile int16_t gyro_dps_raw;
@@ -26,7 +26,7 @@ volatile uint8_t gyro_rx_done;
 
 void Gyro_ParseFrame(uint8_t data)
 {
-	test();
+	//test();
     static uint8_t state = 0;
     static uint8_t frame[9];
     static uint8_t idx = 0;
@@ -74,12 +74,12 @@ void Gyro_ParseFrame(uint8_t data)
             if(idx >= 9)
             {
                 /* CRC校验 */
-                crc_calc = CRC16(frame, 7);
-                crc_recv = frame[7] |
-                          ((uint16_t)frame[8] << 8);
+                // crc_calc = CRC16(frame, 7);
+                // crc_recv = frame[7] |
+                //           ((uint16_t)frame[8] << 8);
 
-                if(crc_calc == crc_recv)
-                {
+                // if(crc_calc == crc_recv)
+                // {
                     /* 角度 */
                     gyro_angle_raw =
                         (int16_t)(
@@ -93,7 +93,7 @@ void Gyro_ParseFrame(uint8_t data)
                              frame[6]);
 
                     gyro_rx_done = 1;
-                }
+                // }
 
                 state = 0;
             }
@@ -131,7 +131,7 @@ void Gyro_ConfigReportRateRx(void)//AA 06 01 01 01 AD 00
     frame[idx++] = 0x00;
 
     // 发送
-    HAL_UART_Transmit(huart, frame, idx, 100);
+    HAL_UART_Transmit(&huart2, frame, idx, 100);
 }
 
 
