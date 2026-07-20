@@ -130,25 +130,32 @@ void HAL_CAN_MspDeInit(CAN_HandleTypeDef* canHandle)
 	*/
 void USER_CAN1_Filter_Init(void)
 {
+	// ¹ýÂËÆ÷½á¹¹Ìå
 	CAN_FilterTypeDef  sFilterConfig;
 
-	// 过滤器参数：全零掩码，意味着“不校验任何ID位”，彻底放行所有标准帧和扩展帧
-	sFilterConfig.FilterBank = 0;                             // 使用过滤器组0
-	sFilterConfig.FilterMode = CAN_FILTERMODE_IDMASK;         // 掩码模式
-	sFilterConfig.FilterScale = CAN_FILTERSCALE_32BIT;        // 32位位宽
-	sFilterConfig.FilterIdHigh = 0x0000;                      // 过滤器ID高16位
-	sFilterConfig.FilterIdLow = 0x0000;                       // 过滤器ID低16位
-	sFilterConfig.FilterMaskIdHigh = 0x0000;                  // 掩码高16位 (全0)
-	sFilterConfig.FilterMaskIdLow = 0x0000;                   // 掩码低16位 (全0)
-	sFilterConfig.FilterFIFOAssignment = CAN_RX_FIFO0;        // 接收到的数据放入 FIFO0
-	sFilterConfig.FilterActivation = ENABLE;                  // 激活过滤器
-	sFilterConfig.SlaveStartFilterBank = 14;                  // 从过滤器组起始位置 (F103默认即可)
+	// ÉèÖÃSTM32µÄÖ¡ID - À©Õ¹Ö¡¸ñÊ½ - ²»¹ýÂËÈÎºÎÊý¾ÝÖ¡
+	__IO uint8_t id_o, im_o; __IO uint16_t id_l, id_h, im_l, im_h;
+	id_o = (0x00);
+	id_h = (uint16_t)((uint16_t)id_o >> 5);								// ¸ß3Î»
+	id_l = (uint16_t)((uint16_t)id_o << 11) | CAN_ID_EXT; // µÍ5Î»
+	im_o = (0x00);
+	im_h = (uint16_t)((uint16_t)im_o >> 5);
+	im_l = (uint16_t)((uint16_t)im_o << 11) | CAN_ID_EXT;
 
-	// 配置过滤器并检查错误
-	if (HAL_CAN_ConfigFilter(&hcan, &sFilterConfig) != HAL_OK)
-	{
-		Error_Handler(); // 如果配置失败，进入死循环报警
-	}
+	// ¹ýÂËÆ÷²ÎÊý
+	sFilterConfig.FilterBank = 0;                      		// ¹ýÂËÆ÷1
+	sFilterConfig.FilterMode = CAN_FILTERMODE_IDMASK;  		// ÑÚÂëÄ£Ê½
+	sFilterConfig.FilterScale = CAN_FILTERSCALE_32BIT; 		// 32Î»¹ýÂËÆ÷Î»¿í
+	sFilterConfig.FilterIdHigh = id_h;               			// ¹ýÂËÆ÷±êÊ¶·ûµÄ¸ß16Î»Öµ
+	sFilterConfig.FilterIdLow = id_l;                			// ¹ýÂËÆ÷±êÊ¶·ûµÄµÍ16Î»Öµ
+	sFilterConfig.FilterMaskIdHigh = im_h;           			// ¹ýÂËÆ÷ÆÁ±Î±êÊ¶·ûµÄ¸ß16Î»Öµ
+	sFilterConfig.FilterMaskIdLow = im_l;            			// ¹ýÂËÆ÷ÆÁ±Î±êÊ¶·ûµÄµÍ16Î»Öµ
+	sFilterConfig.FilterFIFOAssignment = CAN_RX_FIFO0; 		// Ö¸Ïò¹ýÂËÆ÷µÄFIFOÎª0
+	sFilterConfig.FilterActivation = ENABLE;           		// Ê¹ÄÜ¹ýÂËÆ÷
+	sFilterConfig.SlaveStartFilterBank = 0;           		// ´Ó¹ýÂËÆ÷ÅäÖÃ£¬ÓÃÀ´Ñ¡Ôñ´Ó¹ýÂËÆ÷µÄ¼Ä´æÆ÷±àºÅ
+
+	// ÅäÖÃ²¢×Ô¼ì
+	while(HAL_CAN_ConfigFilter(&hcan, &sFilterConfig) != HAL_OK);
 }
 
 /**
