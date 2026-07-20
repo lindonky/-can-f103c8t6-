@@ -257,9 +257,9 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size)
     rx_buffer[Size] = '\0';
 
     // 2. 解析坐标数据
-    int temp_x = 0, temp_y = 0;
-    if (sscanf((char *)rx_buffer, "X:%d,Y:%d", &temp_x, &temp_y) == 2 ||
-        sscanf((char *)rx_buffer, "X:%d, Y:%d", &temp_x, &temp_y) == 2)
+    int16_t temp_x = 0, temp_y = 0;
+
+    if (Fast_Parse_Vision(rx_buffer, &temp_x, &temp_y) == 1)
     {
       K230_Target.err_x = (int16_t)temp_x;
       K230_Target.err_y = (int16_t)temp_y;

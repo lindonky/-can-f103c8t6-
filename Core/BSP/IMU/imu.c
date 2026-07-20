@@ -74,12 +74,12 @@ void Gyro_ParseFrame(uint8_t data)
             if(idx >= 9)
             {
                 /* CRCÐ£Ñé */
-                // crc_calc = CRC16(frame, 7);
-                // crc_recv = frame[7] |
-                //           ((uint16_t)frame[8] << 8);
+                crc_calc = CRC16(frame, 7);
+                crc_recv = frame[7] |
+                          ((uint16_t)frame[8] << 8);
 
-                // if(crc_calc == crc_recv)
-                // {
+                if(crc_calc == crc_recv)
+                {
                     /* ½Ç¶È */
                     gyro_angle_raw =
                         (int16_t)(
@@ -93,7 +93,7 @@ void Gyro_ParseFrame(uint8_t data)
                              frame[6]);
 
                     gyro_rx_done = 1;
-                // }
+                 }
 
                 state = 0;
             }

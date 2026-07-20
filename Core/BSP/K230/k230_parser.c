@@ -105,6 +105,7 @@
 // }
 #include "k230_parser.h"
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 /* 实例化全局视觉数据 */
@@ -166,4 +167,25 @@ void K230_Parse_Byte(uint8_t byte)
             rx_idx = 0; // 如果数据过长（比如发错了），强制丢弃重来
         }
     }
+}
+//轻量解析函数
+uint8_t Fast_Parse_Vision(uint8_t *buf, int16_t *out_x, int16_t *out_y)
+{
+    char *ptr = (char *)buf;
+
+    // 寻找 'X' 和 ':'
+    if (ptr[0] == 'X' && ptr[1] == ':')
+    {
+        *out_x = (int16_t)atoi(ptr + 2); // atoi 非常轻量
+
+        // 往后找 'Y'
+        while (*ptr != '\0' && *ptr != 'Y') ptr++;
+
+        if (*ptr == 'Y' && ptr[1] == ':')
+        {
+            *out_y = (int16_t)atoi(ptr + 2);
+            return 1; // 成功
+        }
+    }
+    return 0; // 失败
 }
